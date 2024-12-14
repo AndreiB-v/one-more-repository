@@ -1,58 +1,79 @@
 import sys
+from os.path import isfile
 
-from ui import Ui_MainWindow
-from PyQt6 import QtCore, QtMultimedia
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSizePolicy, QSpacerItem, QPushButton, QWidget
+from library import Ui_MainWindow
+from card import Ui_Form
+import sqlite3
 
 
-class MyWidget(QMainWindow, Ui_MainWindow):
+class CardForm(QWidget, Ui_Form):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        self.all_buttons = {Qt.Key.Key_Q: [self.q, 'sounds/guitar_As2_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_W: [self.w, 'sounds/guitar_B2_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_E: [self.e, 'sounds/guitar_C3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_R: [self.r, 'sounds/guitar_Cs3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_T: [self.t, 'sounds/guitar_D3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_Y: [self.y, 'sounds/guitar_Ds3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_U: [self.u, 'sounds/guitar_E3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_I: [self.i, 'sounds/guitar_F3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_O: [self.o, 'sounds/guitar_Fs3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_P: [self.p, 'sounds/guitar_G3_very-long_forte_normal.mp3'],
-                            Qt.Key.Key_A: [self.a, 'sounds/guitar_Gs3_very-long_forte_normal.mp3']}
 
-        self.q.clicked.connect(lambda x: self.sound('sounds/guitar_As2_very-long_forte_normal.mp3'))
-        self.w.clicked.connect(lambda x: self.sound('sounds/guitar_B2_very-long_forte_normal.mp3'))
-        self.e.clicked.connect(lambda x: self.sound('sounds/guitar_C3_very-long_forte_normal.mp3'))
-        self.r.clicked.connect(lambda x: self.sound('sounds/guitar_Cs3_very-long_forte_normal.mp3'))
-        self.t.clicked.connect(lambda x: self.sound('sounds/guitar_D3_very-long_forte_normal.mp3'))
-        self.y.clicked.connect(lambda x: self.sound('sounds/guitar_Ds3_very-long_forte_normal.mp3'))
-        self.u.clicked.connect(lambda x: self.sound('sounds/guitar_E3_very-long_forte_normal.mp3'))
-        self.i.clicked.connect(lambda x: self.sound('sounds/guitar_F3_very-long_forte_normal.mp3'))
-        self.o.clicked.connect(lambda x: self.sound('sounds/guitar_Fs3_very-long_forte_normal.mp3'))
-        self.p.clicked.connect(lambda x: self.sound('sounds/guitar_G3_very-long_forte_normal.mp3'))
-        self.a.clicked.connect(lambda x: self.sound('sounds/guitar_Gs3_very-long_forte_normal.mp3'))
+    def place_info(self, info):
+        self.show()
+        self.setWindowTitle(info[0])
+        self.nameText.setText(info[0])
+        self.authorText.setText(info[1])
+        self.yearText.setText(str(info[2]))
+        self.genreText.setText(info[3])
+        if isfile(f'pictures/{info[0]} {info[1].split(" ")[-1]}.png'):
+            picture = QPixmap(f'pictures/{info[0]} {info[1].split(" ")[-1]}.png')
+        else:
+            picture = QPixmap('pictures/placeholder.png')
+        self.pictureLabel.setPixmap(picture.scaled(170, 170))
 
-    def keyPressEvent(self, event):
-        if event.key() in self.all_buttons.keys():
-            self.sound(self.all_buttons[event.key()][1])
 
-    def sound(self, file):
-        self.load_mp3(file)
-        self._player.play()
+class MainForm(QMainWindow, Ui_MainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+        self.initUi()
 
-    def load_mp3(self, filename):
-        media = QtCore.QUrl.fromLocalFile(filename)
-        self._audio_output = QtMultimedia.QAudioOutput()
-        self._player = QtMultimedia.QMediaPlayer()
-        self._player.setAudioOutput(self._audio_output)
-        self._audio_output.setVolume(100)
-        self._player.setSource(media)
+    def initUi(self):
+        self.setWindowTitle('Каталог библиотеки')
+        self.cardForm = CardForm()
+        self.findButton.clicked.connect(lambda x: self.update_list(self.find_results()))
+
+    def clear_layout(self, layout):
+        if 'Layout' in layout.__class__.__name__:
+            while layout.count():
+                child = layout.takeAt(0)
+                self.clear_layout(child)
+                if child.widget():
+                    child.widget().deleteLater()
+
+    def find_results(self):
+        con = sqlite3.connect('bd/catalog.sqlite')
+        cur = con.cursor()
+        text = {'Автор': 'Authors.full_name', 'Название': 'Books.title'}[self.selectSort.currentText()]
+        que = f'''SELECT Books.title, Authors.full_name, Books.year, Books.genre 
+        FROM Authors
+        INNER JOIN Books 
+            ON Authors.id = Books.author
+        WHERE {text} LIKE ?'''
+        result = cur.execute(que, (f'%{self.sortBy.text()}%',)).fetchall()
+        return result
+
+    def update_list(self, books):
+        self.allButtons = {}
+        self.clear_layout(self.verticalLayout)
+        for book in books:
+            self.button = QPushButton(self.scrollAreaWidgetContents)
+            self.button.setText(book[0])
+            self.allButtons[book[0]] = [book[0], book[1], book[2], book[3]]
+            self.button.clicked.connect(
+                lambda state, btn=self.button: self.cardForm.place_info(self.allButtons[btn.text()]))
+            self.verticalLayout.addWidget(self.button)
+        spacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.verticalLayout.addItem(spacer)
 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ex = MyWidget()
+    ex = MainForm()
     ex.show()
     sys.exit(app.exec())
